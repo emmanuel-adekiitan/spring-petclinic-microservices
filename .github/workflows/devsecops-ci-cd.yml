@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@3a47288d45389d0127028308d9324e64173f8286 # v4.7.0
+        uses: actions/setup-java@70b722238491795c4794270220c3ed6ed6ff66a4 # v4.7.0
         with:
           java-version: '17'
           distribution: temurin
@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@3a47288d45389d0127028308d9324e64173f8286 # v4.7.0
+        uses: actions/setup-java@70b722238491795c4794270220c3ed6ed6ff66a4 # v4.7.0
         with:
           java-version: '17'
           distribution: temurin
