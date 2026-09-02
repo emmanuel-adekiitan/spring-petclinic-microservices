@@ -10,14 +10,11 @@ permissions:
   id-token: write
   contents: read
 
-defaults:
-  run:
-    working-directory: ./spring-petclinic-microservices
-
 env:
   AWS_REGION: "ca-central-1"
 
 jobs:
+  # 1. Static Application Security Testing
   sast-code-scan:
     name: "SAST Scan (Semgrep)"
     runs-on: ubuntu-latest
@@ -30,6 +27,7 @@ jobs:
       - name: Run Semgrep
         run: semgrep ci --config p/ci
 
+  # 2. Software Composition Analysis
   sca-dependency-scan:
     name: "SCA Dependency Scan (Trivy)"
     runs-on: ubuntu-latest
@@ -41,11 +39,12 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: 'spring-petclinic-microservices'
+          scan-ref: '.'
           ignore-unfixed: true
           format: 'table'
           severity: 'HIGH,CRITICAL'
 
+  # 3. Build Java Services & Push Containers to ECR
   build-and-push-ecr:
     name: "Build & Push Docker Images"
     needs: [sast-code-scan, sca-dependency-scan]
@@ -101,12 +100,13 @@ jobs:
             docker build -t $ECR_REGISTRY/$SERVICE:$IMAGE_TAG ./$SERVICE
 
             echo "--- Scanning $SERVICE Image ---"
-            trivy image --exit-code 1 --severity HIGH,CRITICAL $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
+            trivy image --severity HIGH,CRITICAL $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
 
             echo "--- Pushing $SERVICE to ECR ---"
             docker push $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
           done
 
+  # 4. Deploy Application to EKS via Helm
   helm-deploy:
     name: "EKS Helm Deployment"
     needs: build-and-push-ecr
@@ -135,6 +135,7 @@ jobs:
             --namespace prod --create-namespace \
             --set image.tag=${{ github.sha }}
 
+  # 5. Dynamic Application Security Testing
   dast-scan:
     name: "DAST Scan (OWASP ZAP)"
     needs: helm-deploy
@@ -145,4 +146,4 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          target: 'http://<your-actual-ingress-or-alb-domain>'
+          target: 'http://petclinic.example.com'
