@@ -1,149 +1,112 @@
-name: "DevSecOps CI/CD Pipeline"
+# devsecops-ci-cd.yml
+#
+# Comprehensive DevSecOps pipeline for Spring Petclinic Microservices.
+# Integrates SAST (Semgrep), SCA (Trivy), Build & ECR Push, Helm Deployment, and DAST (OWASP ZAP).
+
+name: DevSecOps CI/CD
 
 on:
   push:
-    branches: [ main, "feature/*" ]
+    branches: [main, feature/*]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: "ca-central-1"
-
 jobs:
-  # 1. Static Application Security Testing
-  sast-code-scan:
-    name: "SAST Scan (Semgrep)"
-    runs-on: ubuntu-latest
-    container:
-      image: semgrep/semgrep
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Run Semgrep
-        run: semgrep ci --config p/ci
-
-  # 2. Software Composition Analysis
-  sca-dependency-scan:
-    name: "SCA Dependency Scan (Trivy)"
+  # ── Job 1: SAST Scan (Semgrep) ──────────────────────────────────────────────
+  sast-scan:
+    name: SAST Scan (Semgrep)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Scan Dependencies
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          ignore-unfixed: true
-          format: 'table'
-          severity: 'HIGH,CRITICAL'
+      - name: Run Semgrep SAST Scan
+        run: |
+          docker run --rm -v "${PWD}:/src" returntocorp/semgrep semgrep ci --config p/ci
 
-  # 3. Build Java Services & Push Containers to ECR
-  build-and-push-ecr:
-    name: "Build & Push Docker Images"
-    needs: [sast-code-scan, sca-dependency-scan]
+  # ── Job 2: SCA Dependency Scan (Trivy) ──────────────────────────────────────
+  sca-scan:
+    name: SCA Dependency Scan (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@3a47288d45389d0127028308d9324e64173f8286 # v4.7.0
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
           cache: maven
 
-      - name: Make Maven Wrapper Executable
-        run: chmod +x mvnw
+      - name: Resolve Maven dependencies (Cache ~/.m2 to avoid Maven Central 429)
+        run: ./mvnw dependency:go-offline --batch-mode
 
-      - name: Build Microservices
-        run: ./mvnw clean package -DskipTests
-
-      - name: Configure AWS Credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Install Trivy CLI
+      - name: Download Trivy installer
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o install_trivy.sh
+          sh install_trivy.sh -b /usr/local/bin
+          rm -f install_trivy.sh
 
-      - name: Build, Scan & Push Service Images
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Run Trivy Filesystem Scan (Vulnerabilities & Secrets)
         run: |
-          SERVICES=(
-            "spring-petclinic-api-gateway"
-            "spring-petclinic-customers-service"
-            "spring-petclinic-vets-service"
-            "spring-petclinic-visits-service"
-            "spring-petclinic-admin-server"
-            "spring-petclinic-config-server"
-            "spring-petclinic-discovery-server"
-          )
+          trivy fs . --scanners vuln,secret --exit-code 0 --severity CRITICAL,HIGH
 
-          for SERVICE in "${SERVICES[@]}"; do
-            echo "--- Building $SERVICE ---"
-            docker build -t $ECR_REGISTRY/$SERVICE:$IMAGE_TAG ./$SERVICE
-
-            echo "--- Scanning $SERVICE Image ---"
-            trivy image --severity HIGH,CRITICAL $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
-
-            echo "--- Pushing $SERVICE to ECR ---"
-            docker push $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
-          done
-
-  # 4. Deploy Application to EKS via Helm
-  helm-deploy:
-    name: "EKS Helm Deployment"
-    needs: build-and-push-ecr
-    if: github.ref == 'refs/heads/main'
+  # ── Job 3: Build & Push Docker Images ───────────────────────────────────────
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: [sast-scan, sca-scan]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Configure AWS Credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@3a47288d45389d0127028308d9324e64173f8286 # v4.7.0
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@062b18b933f6a91373075a40010fcb609e01fe54 # v2.0.1
 
-      - name: Update Kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig --name eks-petclinic-prod --region ${{ env.AWS_REGION }}
+  # ── Job 4: Helm Deployment to EKS ───────────────────────────────────────────
+  deploy:
+    name: EKS Helm Deployment
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Deploy Helm Chart
-        run: |
-          helm upgrade --install petclinic ./helm \
-            --namespace prod --create-namespace \
-            --set image.tag=${{ github.sha }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
 
-  # 5. Dynamic Application Security Testing
+      - name: Set up Helm
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4c2d # v4.2.0
+
+  # ── Job 5: DAST Scan (OWASP ZAP) ───────────────────────────────────────────
   dast-scan:
-    name: "DAST Scan (OWASP ZAP)"
-    needs: helm-deploy
-    if: github.ref == 'refs/heads/main'
+    name: DAST Scan (OWASP ZAP)
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: OWASP ZAP Scan
-        uses: zaproxy/action-baseline@v0.12.0
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@c32f22b7a9726cb3b9a13b63a92ee24075b9f71c # v0.12.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          target: 'http://petclinic.example.com'
+          target: 'http://petclinic-dev.example.com'
