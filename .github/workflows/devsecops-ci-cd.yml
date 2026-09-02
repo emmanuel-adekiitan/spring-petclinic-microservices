@@ -1,0 +1,148 @@
+name: "DevSecOps CI/CD Pipeline"
+
+on:
+  push:
+    branches: [ main, "feature/*" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+
+defaults:
+  run:
+    working-directory: ./spring-petclinic-microservices
+
+env:
+  AWS_REGION: "ca-central-1"
+
+jobs:
+  sast-code-scan:
+    name: "SAST Scan (Semgrep)"
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep ci --config p/ci
+
+  sca-dependency-scan:
+    name: "SCA Dependency Scan (Trivy)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Scan Dependencies
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'spring-petclinic-microservices'
+          ignore-unfixed: true
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+
+  build-and-push-ecr:
+    name: "Build & Push Docker Images"
+    needs: [sast-code-scan, sca-dependency-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Make Maven Wrapper Executable
+        run: chmod +x mvnw
+
+      - name: Build Microservices
+        run: ./mvnw clean package -DskipTests
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Build, Scan & Push Service Images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          SERVICES=(
+            "spring-petclinic-api-gateway"
+            "spring-petclinic-customers-service"
+            "spring-petclinic-vets-service"
+            "spring-petclinic-visits-service"
+            "spring-petclinic-admin-server"
+            "spring-petclinic-config-server"
+            "spring-petclinic-discovery-server"
+          )
+
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "--- Building $SERVICE ---"
+            docker build -t $ECR_REGISTRY/$SERVICE:$IMAGE_TAG ./$SERVICE
+
+            echo "--- Scanning $SERVICE Image ---"
+            trivy image --exit-code 1 --severity HIGH,CRITICAL $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
+
+            echo "--- Pushing $SERVICE to ECR ---"
+            docker push $ECR_REGISTRY/$SERVICE:$IMAGE_TAG
+          done
+
+  helm-deploy:
+    name: "EKS Helm Deployment"
+    needs: build-and-push-ecr
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Update Kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name eks-petclinic-prod --region ${{ env.AWS_REGION }}
+
+      - name: Deploy Helm Chart
+        run: |
+          helm upgrade --install petclinic ./helm \
+            --namespace prod --create-namespace \
+            --set image.tag=${{ github.sha }}
+
+  dast-scan:
+    name: "DAST Scan (OWASP ZAP)"
+    needs: helm-deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: OWASP ZAP Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target: 'http://<your-actual-ingress-or-alb-domain>'
