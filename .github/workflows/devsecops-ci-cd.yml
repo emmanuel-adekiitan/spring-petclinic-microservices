@@ -37,8 +37,8 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Resolve Maven dependencies
-        run: ./mvnw dependency:go-offline --batch-mode
+      - name: Resolve Maven dependencies with caching
+        run: ./mvnw dependency:resolve --batch-mode
 
       - name: Download Trivy installer
         run: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Run Trivy Filesystem Scan
         run: |
-          trivy fs . --scanners vuln,secret --exit-code 0 --severity CRITICAL,HIGH
+          trivy fs . --scanners vuln,secret --exit-code 0 --severity CRITICAL,HIGH --offline-scan
 
   build-and-push:
     name: Build & Push Docker Images
