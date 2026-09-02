@@ -46,14 +46,12 @@ jobs:
       sha:         ${{ steps.build-matrix.outputs.sha }}
 
     steps:
-      # TODO(security): pin each action to a full commit SHA to prevent supply-chain
-      # attacks. Replace "@vN" with "@<sha>  # vN.N.N" once SHAs are verified.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Detect changed service directories
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@de0422870e9a0990637b1401d6767f71b39177a1 # v3.0.2
         with:
           filters: |
             config-server:
@@ -106,7 +104,7 @@ jobs:
           fi
 
   # ── Job 2: Build, scan, push (one job per changed service) ──────────────────
-  # Each matrix entry calls the reusable ecr-login workflow which handles:
+  # Each matrix entry calls the reusable ecr-build-push workflow which handles:
   #   checkout → JDK → QEMU → Buildx → OIDC auth → ECR login →
   #   Maven build → Trivy CRITICAL gate → Trivy HIGH info → tag → push
   #
@@ -125,7 +123,8 @@ jobs:
       sha:            ${{ needs.detect-changes.outputs.sha }}
       aws-region:     ${{ vars.AWS_REGION || 'eu-central-1' }}
       aws-account-id: ${{ vars.AWS_ACCOUNT_ID }}
-    secrets: inherit
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
   # ── Job 3: Notify platform repo ─────────────────────────────────────────────
   # Fires a repository_dispatch to pravinmishraaws/petclinic-platform once all
@@ -147,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch app-image-built to platform repo
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@ff456d64899ed7e1122452281eb1bd0c4974f1d4 # v3.0.0
         with:
           token: ${{ secrets.PLATFORM_REPO_TOKEN }}
           repository: ${{ vars.PLATFORM_REPO }}
