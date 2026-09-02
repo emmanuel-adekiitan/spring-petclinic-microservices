@@ -4,7 +4,6 @@
 # and push the ARM64 image to ECR dev.
 #
 # Called by build-push.yml once per changed service (matrix strategy).
-# All AWS credentials come through the caller via "secrets: inherit".
 #
 # Inputs:
 #   service        — ECR/Helm service name (e.g. "customers-service")
@@ -12,7 +11,7 @@
 #   aws-region     — AWS region where ECR lives (default: eu-central-1)
 #   aws-account-id — AWS account ID used to construct the ECR registry URL
 #
-# Required secrets (passed via "secrets: inherit" from caller):
+# Secrets passed explicitly from caller:
 #   AWS_ROLE_ARN — OIDC IAM role ARN (petclinic-github-actions-role)
 
 name: Build, Scan, Push (reusable)
@@ -37,6 +36,10 @@ on:
         description: "AWS account ID for constructing the ECR registry URL"
         required: true
         type: string
+    secrets:
+      AWS_ROLE_ARN:
+        description: "OIDC IAM role ARN"
+        required: true
 
 permissions:
   id-token: write  # Required for OIDC token exchange with AWS STS
@@ -56,53 +59,40 @@ jobs:
       TARGET_IMAGE: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com/petclinic-dev/${{ inputs.service }}:${{ inputs.sha }}
 
     steps:
-      # TODO(security): pin each action to a full commit SHA to prevent supply-chain
-      # attacks. Replace "@vN" with "@<sha>  # vN.N.N" once SHAs are verified.
-      # See: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Checkout application repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # ── Java ───────────────────────────────────────────────────────────────
       - name: Set up JDK 17 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@3a47288d45389d0127028308d9324e64173f8286 # v4.7.0
         with:
           java-version: "17"
           distribution: temurin
           cache: maven
 
       # ── Docker (ARM64 cross-compilation) ───────────────────────────────────
-      # QEMU must be installed before Docker Buildx so the arm64 emulator is
-      # available. The Maven buildDocker profile calls "docker build --platform
-      # linux/arm64 --load", which routes through Buildx when it is the default
-      # builder. --load ensures the image lands in the local daemon for scanning.
       - name: Set up QEMU (ARM64 emulation)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@49ed15265ecd6f112a2140d41e6ed1b56f43e9d8 # v3.2.0
         with:
           platforms: arm64
 
       - name: Set up Docker Buildx (default builder)
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9710f44868053a77fe6134f71020f6 # v3.7.1
 
       # ── AWS authentication (OIDC — no long-lived credentials) ──────────────
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Login to Amazon ECR
         id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@062b18b933f6a91373075a40010fcb609e01fe54 # v2.0.1
         with:
           region: ${{ inputs.aws-region }}
 
       # ── Build ──────────────────────────────────────────────────────────────
-      # Builds the single service module and its upstream parents (-am).
-      # The buildDocker Maven profile calls:
-      #   docker build --build-arg ARTIFACT_NAME=... --build-arg EXPOSED_PORT=...
-      #                --platform linux/arm64 --load -t springcommunity/spring-petclinic-{service}
-      # The --load flag (container.build.extraarg in pom.xml) puts the image in
-      # the local daemon, where Trivy can scan it before the push.
       - name: Build Docker image (ARM64) with Maven
         run: |
           ./mvnw clean install \
@@ -113,11 +103,8 @@ jobs:
             --batch-mode
 
       # ── Trivy scanning ─────────────────────────────────────────────────────
-
-      # Informational only — does not block the push.
-      # In production change exit-code to "1" to gate on CRITICAL CVEs.
       - name: Trivy scan — CRITICAL (informational)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394d2dd8c87dbb9 # v0.29.0
         with:
           image-ref: ${{ env.SOURCE_IMAGE }}
           format: table
@@ -127,10 +114,9 @@ jobs:
           severity: CRITICAL
           trivyignores: .trivyignore
 
-      # Step 2: HIGH scan — informational only, does not block the push.
       - name: Trivy scan — HIGH (informational)
         if: always()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394d2dd8c87dbb9 # v0.29.0
         with:
           image-ref: ${{ env.SOURCE_IMAGE }}
           format: table
@@ -142,7 +128,7 @@ jobs:
 
       - name: Upload Trivy scan results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac212193f4a4d08fbe658013e2e16 # v4.4.3
         with:
           name: trivy-results-${{ inputs.service }}-${{ inputs.sha }}
           path: |
@@ -152,8 +138,6 @@ jobs:
           retention-days: 30
 
       # ── Tag and push ───────────────────────────────────────────────────────
-      # Trivy scan complete — tag the Maven-built image with the commit SHA and
-      # push to the dev ECR repository.
       - name: Tag image with commit SHA
         run: |
           docker tag "${{ env.SOURCE_IMAGE }}" "${{ env.TARGET_IMAGE }}"
@@ -166,6 +150,8 @@ jobs:
 
       - name: Logout from ECR
         if: always()
+        env:
+          AWS_ACCOUNT_ID: ${{ inputs.aws-account-id }}
+          AWS_REGION: ${{ inputs.aws-region }}
         run: |
-          docker logout \
-            "${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com"
+          docker logout "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
