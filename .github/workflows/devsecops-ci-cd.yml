@@ -93,10 +93,8 @@ jobs:
             -f docker/Dockerfile \
             --build-arg ARTIFACT_NAME=spring-petclinic \
             --build-arg EXPOSED_PORT=8080 \
-            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
-            -t $REGISTRY/$REPOSITORY:latest .
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
-          docker push $REGISTRY/$REPOSITORY:latest
 
   deploy:
     name: EKS Helm Deployment
