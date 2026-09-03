@@ -84,7 +84,12 @@ jobs:
           REPOSITORY: ecr-petclinic-prod
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG -t $REGISTRY/$REPOSITORY:latest .
+          docker build \
+            -f docker/Dockerfile \
+            --build-arg ARTIFACT_NAME=spring-petclinic \
+            --build-arg EXPOSED_PORT=8080 \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -t $REGISTRY/$REPOSITORY:latest .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
           docker push $REGISTRY/$REPOSITORY:latest
 
