@@ -139,7 +139,8 @@ jobs:
             --namespace default \
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
             --set image.tag=${{ github.sha }} \
-            --set apiGateway.service.type=LoadBalancer
+            --set apiGateway.service.type=LoadBalancer \
+            --set apiGateway.replicaCount=1
 
       - name: Get Application Endpoint
         id: get-endpoint
