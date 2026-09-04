@@ -140,12 +140,12 @@ jobs:
 
       - name: Get Application Endpoint
         run: |
-          echo "Checking initial pod status..."
-          kubectl get pods -n default
+          echo "Checking initial deployments status..."
+          kubectl get deployments -n default
 
-          echo "Waiting for pods to be ready (with extended timeout and diagnostics)..."
-          if ! kubectl wait --for=condition=ready pod --selector=app.kubernetes.io/name=petclinic-api-gateway -n default --timeout=300s; then
-            echo "=== PODS FAILED TO BECOME READY. DESCRIBING PODS ==="
+          echo "Waiting for deployments to be available..."
+          if ! kubectl rollout status deployment/petclinic-api-gateway -n default --timeout=300s; then
+            echo "=== DEPLOYMENT FAILED TO ROLL OUT. DESCRIBING PODS ==="
             kubectl describe pods -n default
             echo "=== RECENT CONTAINER LOGS ==="
             kubectl logs -l app.kubernetes.io/name=petclinic-api-gateway --tail=100 -n default || true
