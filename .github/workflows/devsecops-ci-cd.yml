@@ -138,8 +138,9 @@ jobs:
           helm upgrade --install petclinic-app helm \
             --namespace default \
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
-            --set image.tag=${{ github.sha }} \
-            --set apiGateway.service.type=LoadBalancer
+            --set image.tag=${{ github.sha }}
+          
+          kubectl patch svc petclinic-api-gateway -n default -p '{"spec": {"type": "LoadBalancer"}}'
           kubectl scale deployment petclinic-api-gateway --replicas=1 -n default
           kubectl rollout restart deployment petclinic-api-gateway -n default
 
