@@ -149,20 +149,30 @@ jobs:
           echo "Waiting for LoadBalancer external IP/hostname..."
           
           ENDPOINT=""
-          while [ -z "$ENDPOINT" ]; do
+          RETRIES=0
+          MAX_RETRIES=30
+          
+          while [ -z "$ENDPOINT" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
             ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
             if [ -z "$ENDPOINT" ]; then
               ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             fi
             if [ -z "$ENDPOINT" ]; then
-              echo "Still waiting for load balancer address..."
+              echo "Still waiting for load balancer address (Attempt $((RETRIES+1))/$MAX_RETRIES)..."
               sleep 10
+              RETRIES=$((RETRIES+1))
             fi
           done
           
+          if [ -z "$ENDPOINT" ]; then
+            echo "Error: LoadBalancer address was not assigned. Describing service for errors:"
+            kubectl describe svc petclinic-api-gateway -n default
+            exit 1
+          fi
+          
           echo "target_url=http://$ENDPOINT:8080" >> $GITHUB_OUTPUT
           echo "Application endpoint is http://$ENDPOINT:8080"
-
+          
   dast-scan:
     name: DAST Scan (OWASP ZAP)
     needs: deploy
