@@ -139,8 +139,8 @@ jobs:
             --namespace default \
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
             --set image.tag=${{ github.sha }} \
-            --set apiGateway.service.type=LoadBalancer \
-            --set apiGateway.replicaCount=1
+            --set apiGateway.service.type=LoadBalancer
+          kubectl scale deployment petclinic-api-gateway --replicas=1 -n default
 
       - name: Get Application Endpoint
         id: get-endpoint
