@@ -140,6 +140,9 @@ jobs:
 
       - name: Get Application Endpoint
         run: |
+          echo "Waiting for pods to be scheduled and running..."
+          kubectl wait --for=condition=ready pod --all -n default --timeout=180s
+
           echo "Establishing port-forward..."
           kubectl port-forward --address 0.0.0.0 svc/petclinic-api-gateway 8080:8080 -n default &
           
