@@ -140,9 +140,26 @@ jobs:
 
       - name: Get Application Endpoint
         run: |
-          echo "Establishing port-forward to bypass LoadBalancer provisioning..."
-          kubectl port-forward svc/petclinic-api-gateway 8080:8080 -n default &
-          sleep 5
+          echo "Establishing port-forward..."
+          kubectl port-forward --address 0.0.0.0 svc/petclinic-api-gateway 8080:8080 -n default &
+          
+          echo "Waiting for tunnel readiness..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8080 > /dev/null; then
+              echo "Port-forward established successfully."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Error: Port-forward timed out."
+          exit 1
+
+      - name: Prepare ZAP Permissions & Artifacts
+        run: |
+          mkdir -p .zap
+          touch .zap/rules.tsv
+          sudo chmod -R 777 .zap
+          sudo chmod -R 777 .
 
       - name: DAST Scan (OWASP ZAP)
         uses: zaproxy/action-baseline@v0.12.0 # nosemgrep
