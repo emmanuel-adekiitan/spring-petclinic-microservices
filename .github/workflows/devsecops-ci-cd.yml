@@ -143,9 +143,9 @@ jobs:
       - name: Get Application Endpoint
         id: get-endpoint
         run: |
-          ENDPOINT=$(kubectl get svc petclinic -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          ENDPOINT=$(kubectl get svc petclinic-app -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ -z "$ENDPOINT" ]; then
-            ENDPOINT=$(kubectl get svc petclinic -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ENDPOINT=$(kubectl get svc petclinic-app -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
           fi
           echo "target_url=http://$ENDPOINT" >> $GITHUB_OUTPUT
 
