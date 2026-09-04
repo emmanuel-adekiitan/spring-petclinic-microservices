@@ -140,6 +140,9 @@ jobs:
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
             --set image.tag=${{ github.sha }}
 
+      - name: Debug Services
+        run: kubectl get svc -n default
+
       - name: Get Application Endpoint
         id: get-endpoint
         run: |
