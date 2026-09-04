@@ -147,7 +147,6 @@ jobs:
         id: get-endpoint
         run: |
           echo "Waiting for LoadBalancer external IP/hostname..."
-          kubectl rollout status deployment/petclinic-api-gateway -n default --timeout=120s
           
           ENDPOINT=""
           while [ -z "$ENDPOINT" ]; do
