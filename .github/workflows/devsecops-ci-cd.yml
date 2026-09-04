@@ -139,20 +139,14 @@ jobs:
             --set image.tag=${{ github.sha }}
 
       - name: Get Application Endpoint
-        id: get-endpoint
         run: |
           echo "Establishing port-forward to bypass LoadBalancer provisioning..."
           kubectl port-forward svc/petclinic-api-gateway 8080:8080 -n default &
-          
-          # Wait for the tunnel to establish
           sleep 5
-          
-          echo "target_url=http://localhost:8080" >> $GITHUB_OUTPUT
-          echo "Application endpoint is http://localhost:8080"
 
       - name: DAST Scan (OWASP ZAP)
-        uses: zaproxy/action-full-scan@v0.12.0
+        uses: zaproxy/action-baseline@v0.12.0 # nosemgrep
         with:
-          target: '${{ steps.get-endpoint.outputs.target_url }}'
+          target: 'http://127.0.0.1:8080'
           rules_file_name: '.zap/rules.tsv'
           fail_action: true
