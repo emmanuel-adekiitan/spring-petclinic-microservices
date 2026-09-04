@@ -130,6 +130,7 @@ jobs:
           helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --create-namespace \
+            --timeout 10m \
             -f helm/monitoring-values.yaml
 
       - name: Deploy Petclinic Application
