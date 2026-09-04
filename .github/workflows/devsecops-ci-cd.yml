@@ -139,53 +139,22 @@ jobs:
             --namespace default \
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
             --set image.tag=${{ github.sha }}
-          
-          kubectl patch svc petclinic-api-gateway -n default -p '{"spec": {"type": "LoadBalancer"}}'
-          kubectl scale deployment petclinic-api-gateway --replicas=1 -n default
-          kubectl rollout restart deployment petclinic-api-gateway -n default
 
       - name: Get Application Endpoint
         id: get-endpoint
         run: |
-          echo "Waiting for LoadBalancer external IP/hostname..."
+          echo "Establishing port-forward to bypass LoadBalancer provisioning..."
+          kubectl port-forward svc/petclinic-api-gateway 8080:8080 -n default &
           
-          ENDPOINT=""
-          RETRIES=0
-          MAX_RETRIES=30
+          # Wait for the tunnel to establish
+          sleep 5
           
-          while [ -z "$ENDPOINT" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
-            ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-            if [ -z "$ENDPOINT" ]; then
-              ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            fi
-            if [ -z "$ENDPOINT" ]; then
-              echo "Still waiting for load balancer address (Attempt $((RETRIES+1))/$MAX_RETRIES)..."
-              sleep 10
-              RETRIES=$((RETRIES+1))
-            fi
-          done
-          
-          if [ -z "$ENDPOINT" ]; then
-            echo "Error: LoadBalancer address was not assigned. Describing service for errors:"
-            kubectl describe svc petclinic-api-gateway -n default
-            exit 1
-          fi
-          
-          echo "target_url=http://$ENDPOINT:8080" >> $GITHUB_OUTPUT
-          echo "Application endpoint is http://$ENDPOINT:8080"
-          
-  dast-scan:
-    name: DAST Scan (OWASP ZAP)
-    needs: deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+          echo "target_url=http://localhost:8080" >> $GITHUB_OUTPUT
+          echo "Application endpoint is http://localhost:8080"
 
-      - name: Grant workspace permissions for ZAP
-        run: sudo chmod -R 777 .
-
-      - name: Run OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0 # nosemgrep
+      - name: DAST Scan (OWASP ZAP)
+        uses: zaproxy/action-full-scan@v0.12.0
         with:
-          target: '${{ needs.deploy.outputs.target_url }}'
+          target: '${{ steps.get-endpoint.outputs.target_url }}'
+          rules_file_name: '.zap/rules.tsv'
+          fail_action: true
