@@ -138,16 +138,29 @@ jobs:
           helm upgrade --install petclinic-app helm \
             --namespace default \
             --set image.repository=128793514564.dkr.ecr.ca-central-1.amazonaws.com/ecr-petclinic-prod \
-            --set image.tag=${{ github.sha }}
-
-      - name: Debug Services
-        run: kubectl get svc -n default
+            --set image.tag=${{ github.sha }} \
+            --set apiGateway.service.type=LoadBalancer
 
       - name: Get Application Endpoint
         id: get-endpoint
         run: |
-          ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.spec.clusterIP}')
+          echo "Waiting for LoadBalancer external IP/hostname..."
+          kubectl rollout status deployment/petclinic-api-gateway -n default --timeout=120s
+          
+          ENDPOINT=""
+          while [ -z "$ENDPOINT" ]; do
+            ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -z "$ENDPOINT" ]; then
+              ENDPOINT=$(kubectl get svc petclinic-api-gateway -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            fi
+            if [ -z "$ENDPOINT" ]; then
+              echo "Still waiting for load balancer address..."
+              sleep 10
+            fi
+          done
+          
           echo "target_url=http://$ENDPOINT:8080" >> $GITHUB_OUTPUT
+          echo "Application endpoint is http://$ENDPOINT:8080"
 
   dast-scan:
     name: DAST Scan (OWASP ZAP)
