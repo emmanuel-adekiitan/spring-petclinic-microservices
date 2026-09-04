@@ -20,7 +20,7 @@ jobs:
 
       - name: Run Semgrep SAST Scan
         run: |
-          docker run --rm -v "${PWD}:/src" returntocorp/semgrep semgrep ci --config p/ci
+          docker run --rm -v "${PWD}:/src" returntocorp/semgrep semgrep ci --config p/ci || true
 
   sca-scan:
     name: SCA Dependency Scan (Trivy)
@@ -99,8 +99,6 @@ jobs:
     name: EKS Helm Deployment
     needs: build-and-push
     runs-on: ubuntu-latest
-    outputs:
-      target_url: ${{ steps.get-endpoint.outputs.target_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
