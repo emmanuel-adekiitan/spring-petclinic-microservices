@@ -141,6 +141,7 @@ jobs:
             --set image.tag=${{ github.sha }} \
             --set apiGateway.service.type=LoadBalancer
           kubectl scale deployment petclinic-api-gateway --replicas=1 -n default
+          kubectl rollout restart deployment petclinic-api-gateway -n default
 
       - name: Get Application Endpoint
         id: get-endpoint
